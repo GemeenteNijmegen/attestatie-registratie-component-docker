@@ -8,6 +8,7 @@ WORKDIR /build
 COPY package.json ./
 RUN npm install
 
+COPY public ./public
 COPY src ./src
 COPY tsconfig.json ./
 RUN npm run build
@@ -21,6 +22,7 @@ WORKDIR /app
 
 COPY --from=builder /build/dist ./dist
 COPY --from=builder /build/node_modules ./node_modules
+COPY --from=builder /build/public ./public
 
 EXPOSE 3000
 

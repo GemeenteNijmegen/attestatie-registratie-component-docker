@@ -167,9 +167,28 @@ async function main() {
   const app = express();
   app.use(express.json());
 
+  const publicDir = path.join(__dirname, '..', 'public', openProductMode === 'fake' ? 'demo' : 'prod');
+  app.use(express.static(publicDir));
+
+  app.get('/done', (_req, res) => {
+    res.sendFile(path.join(publicDir, 'done.html'));
+  });
+
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+
+  // GET /products — list of demo products for the portal (demo mode only)
+  if (openProductMode === 'fake') {
+    app.get('/products', (_req, res) => {
+      const list = Object.values(FAKE_PRODUCTS).map((p: any) => ({
+        id: p.uuid,
+        naam: p.naam,
+        type: p.producttype.uniforme_product_naam,
+      }));
+      res.json(list);
+    });
+  }
 
   // POST /start — begin issuance flow
   // Body: { id: string, source?: string }
