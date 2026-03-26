@@ -1,9 +1,6 @@
 services:
   arc:
-    build:
-      context: .
-      additional_contexts:
-        component: ../attestatie-registratie-component
+    build: .
     ports:
       - "${PORT:-3000}:3000"
     env_file:

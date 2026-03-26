@@ -107,10 +107,7 @@ npm run dev
 
 ## Docker build details
 
-The Dockerfile uses a three-stage build:
+The Dockerfile uses a two-stage build:
 
-1. **component-builder** — installs and compiles `attestatie-registratie-component`, then packs it into a tarball with `npm pack`.
-2. **server-builder** — installs the tarball (no symlinks), compiles this server's TypeScript.
-3. **runtime** — minimal Alpine image with only `dist/` and `node_modules/`.
-
-The build context is `.` (this directory). The component is provided as a named additional context (`component: ../attestatie-registratie-component`) in `docker-compose.yml` and accessed in the Dockerfile via `COPY --from=component`. This requires Docker Compose 2.17+ and BuildKit (both enabled by default in recent Docker Desktop / Docker Engine installations).
+1. **builder** — installs dependencies (including the published `@gemeentenijmegen/attestatie-registratie-component` from npm) and compiles the server TypeScript.
+2. **runtime** — minimal Alpine image with only `dist/` and `node_modules/`.
