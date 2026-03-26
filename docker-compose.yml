@@ -1,0 +1,15 @@
+services:
+  arc:
+    build:
+      context: .
+      additional_contexts:
+        component: ../attestatie-registratie-component
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    volumes:
+      # Mount your flows.json at runtime so you can change it without rebuilding
+      - ./flows.json:/app/flows.json:ro
+    environment:
+      FLOWS_CONFIG_PATH: /app/flows.json

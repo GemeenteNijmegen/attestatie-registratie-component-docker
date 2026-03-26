@@ -1,0 +1,116 @@
+# attestatie-registratie-component-docker
+
+Runs [`attestatie-registratie-component`](../attestatie-registratie-component) as a standalone HTTP server inside Docker. The component package itself is not modified.
+
+## How it works
+
+An Express server wraps ARC and exposes two endpoints that mirror the Lambda handler in the infra project:
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/start` | Begin an issuance flow. Body: `{ "id": "<product-uuid>", "source": "openproduct" }`. Returns `{ "url": "<VerID OAuth URL>" }`. |
+| `GET` | `/callback` | OAuth redirect from VerID. Redirects to `ARC_REDIRECT_URL?status=true/false`. |
+| `GET` | `/health` | Health check. |
+
+[InMemory](../attestatie-registratie-component/src/adapters/InMemory.ts) is used as the session store (no DynamoDB needed).
+
+## Prerequisites
+
+- Docker + Docker Compose
+- A `flows.json` file (see below)
+- VerID credentials
+
+## Quick start
+
+```bash
+cd projects/attestatie-registratie-component-docker
+
+# 1. Configure env vars
+cp .env.example .env
+# Edit .env with your VerID credentials
+
+# 2. Configure VerID flow UUIDs
+cp flows.example.json flows.json
+# Edit flows.json with your actual flow UUIDs
+
+# 3. Build and start
+docker compose up --build
+```
+
+The server starts on `http://localhost:3000`.
+
+## Configuration
+
+### Environment variables (`.env`)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `VERID_ISSUER_URL` | Yes | — | VerID OAuth server base URL |
+| `VERID_CLIENT_SECRET` | Yes | — | VerID client secret |
+| `ARC_CALLBACK_ENDPOINT` | Yes | — | Full URL of `/callback` on this server (must match VerID's registered redirect URI) |
+| `ARC_REDIRECT_URL` | No | `/` | Where to send the user after the callback. `?status=true/false` is appended. |
+| `FLOWS_CONFIG_PATH` | No | `./flows.json` | Path to the flows config JSON (inside the container) |
+| `OPENPRODUCT_MODE` | No | `fake` | `fake` (built-in mock) or `real` (live API) |
+| `OPENPRODUCT_BASE_URL` | When `real` | — | Base URL of the OpenProduct API |
+| `OPENPRODUCT_API_TOKEN` | When `real` | — | Bearer token for the OpenProduct API |
+| `PORT` | No | `3000` | HTTP port |
+| `FAKE_OPENPRODUCT_PORT` | No | `9876` | Internal port for the fake OpenProduct server |
+
+### VerID flows config (`flows.json`)
+
+Maps attestation types to VerID flow UUIDs. The `VerID` provider uses this to select the correct flow for each product type.
+
+```json
+{
+  "standplaatsvergunning": { "flowUuid": "your-flow-uuid-here" },
+  "overlijdensakte":       { "flowUuid": "your-flow-uuid-here" }
+}
+```
+
+The file is mounted into the container as a volume (see `docker-compose.yml`), so you can update it without rebuilding the image.
+
+### OpenProduct modes
+
+**`OPENPRODUCT_MODE=fake`** (default)
+
+Starts a built-in mock server with two test products:
+
+| UUID | Type |
+|---|---|
+| `12126e1e-9bc1-4a30-b73e-5b5aa4ce8bc4` | `standplaatsvergunning` |
+| `341bd5ac-6a68-4ac2-812e-b9e4f4aea764` | `overlijdensakte` |
+
+Example start request:
+```bash
+curl -X POST http://localhost:3000/start \
+  -H 'Content-Type: application/json' \
+  -d '{ "id": "12126e1e-9bc1-4a30-b73e-5b5aa4ce8bc4" }'
+```
+
+**`OPENPRODUCT_MODE=real`**
+
+Connects to a live OpenProduct API. Set `OPENPRODUCT_BASE_URL` and `OPENPRODUCT_API_TOKEN`.
+
+## Local development (without Docker)
+
+```bash
+cd projects/attestatie-registratie-component-docker
+
+# Install deps (uses the local component via file: reference)
+npm install
+
+# Start the dev server (hot-reload via tsx)
+cp .env.example .env   # fill in values
+cp flows.example.json flows.json
+npm run dev
+```
+
+## Docker build details
+
+The Dockerfile uses a three-stage build:
+
+1. **component-builder** — installs and compiles `attestatie-registratie-component`, then packs it into a tarball with `npm pack`.
+2. **server-builder** — installs the tarball (no symlinks), compiles this server's TypeScript.
+3. **runtime** — minimal Alpine image with only `dist/` and `node_modules/`.
+
+The build context is `.` (this directory). The component is provided as a named additional context (`component: ../attestatie-registratie-component`) in `docker-compose.yml` and accessed in the Dockerfile via `COPY --from=component`. This requires Docker Compose 2.17+ and BuildKit (both enabled by default in recent Docker Desktop / Docker Engine installations).
