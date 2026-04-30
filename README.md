@@ -12,7 +12,7 @@ An Express server wraps ARC and exposes two endpoints that mirror the Lambda han
 | `GET` | `/callback` | OAuth redirect from VerID. Redirects to `ARC_REDIRECT_URL?status=true/false`. |
 | `GET` | `/health` | Health check. |
 
-[InMemory](../attestatie-registratie-component/src/adapters/InMemory.ts) is used as the session store (no DynamoDB needed).
+[InMemory](https://github.com/GemeenteNijmegen/attestatie-registratie-component/blob/main/src/adapters/InMemory.ts) is used as the session store (no DynamoDB needed).
 
 ## Prerequisites
 
