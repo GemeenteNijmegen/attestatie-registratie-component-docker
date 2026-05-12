@@ -2,11 +2,12 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 
+import { Pool } from 'pg';
 import express from 'express';
 import {
   ARC, VerID, OpenProduct,
   OpenProductStandplaatsvergunning, OpenProductOverlijdensakte,
-  InMemory,
+  InMemory, PostgreSql,
 } from '@gemeentenijmegen/attestatie-registratie-component';
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,20 @@ function loadFlowsConfig(): Record<string, { flowUuid: string }> {
     );
   }
   return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+}
+
+async function waitForDatabase(pool: Pool, retries = 5, delay = 2000): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('Database connection successful.');
+      return;
+    } catch (err: any) {
+      console.log(`Database connection failed (attempt ${i + 1}/${retries}): ${err.message}. Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error(`Failed to connect to database after ${retries} attempts.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +159,20 @@ async function main() {
     console.log(`Using real OpenProduct API at ${openProductBaseUrl}`);
   }
 
+  // Store setup
+  const databaseUrl = process.env.DATABASE_URL;
+  let store: any;
+
+  if (databaseUrl) {
+    console.log(`Using PostgreSql store with connection to ${databaseUrl.split('@')[1]}`);
+    const pool = new Pool({ connectionString: databaseUrl });
+    await waitForDatabase(pool);
+    store = new PostgreSql({ pool });
+  } else {
+    console.log('Using InMemory store (no DATABASE_URL provided)');
+    store = new InMemory();
+  }
+
   // ARC instance
   const arc = new ARC({
     provider: new VerID(
@@ -154,13 +183,13 @@ async function main() {
       },
       flows,
     ),
-    store: new InMemory(),
+    store,
     sources: [new OpenProduct({ baseUrl: openProductBaseUrl, apiToken: openProductToken })],
     attestations: [new OpenProductStandplaatsvergunning(), new OpenProductOverlijdensakte()],
   });
 
   arc.on('issuance', async (event) => {
-    console.log(`[ARC] issuance → ${event.status}`, event.context);
+    console.log(`[ARC] issuance → ${event.status} (id: ${event.sessionId})`, event.context);
   });
 
   // Express server
@@ -205,8 +234,12 @@ async function main() {
       console.log(`[POST /start] source=${source} id=${id}`);
       const result = await arc.issue({ source, id });
 
+
+      // This ID will be used for revocation requests
+      console.log(`[POST /start] Issued UUID for revocation: ${result.sessionId}`);
+
       if (result.type === 'oauth') {
-        res.json({ url: result.url });
+        res.json({ url: result.url, sessionId: result.sessionId });
       } else {
         res.json(result);
       }
