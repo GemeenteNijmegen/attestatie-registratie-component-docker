@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import express from 'express';
 import {
   ARC, VerID, OpenProduct,
-  OpenProductStandplaatsvergunning, OpenProductOverlijdensakte,
+  OpenProductStandplaatsvergunning,
   InMemory, PostgreSql,
 } from '@gemeentenijmegen/attestatie-registratie-component';
 
@@ -66,38 +66,6 @@ const FAKE_PRODUCTS: Record<string, unknown> = {
     },
     eigenaren: [{ uuid: '1dbe98d5-118e-4143-8e24-f5c866efc799', bsn: '999999333' }],
     dataobject: { location: 'St. Annastraat 250 6525 HA NIJMEGEN' },
-  },
-  '341bd5ac-6a68-4ac2-812e-b9e4f4aea764': {
-    uuid: '341bd5ac-6a68-4ac2-812e-b9e4f4aea764',
-    url: 'http://localhost:9876/producten/341bd5ac-6a68-4ac2-812e-b9e4f4aea764',
-    naam: 'Overlijdensakte test',
-    start_datum: null,
-    eind_datum: null,
-    aanmaak_datum: '2026-03-24T11:24:24.042924+01:00',
-    update_datum: '2026-03-24T11:24:24.042940+01:00',
-    producttype: {
-      uuid: '16ac80c5-c10d-4efd-9be0-d81966772aa6',
-      code: 'TEST-PINK',
-      uniforme_product_naam: 'overlijdensakte',
-    },
-    eigenaren: [{ uuid: '31411e0a-c87a-4d39-b328-c71361951ec8', bsn: '999999333' }],
-    dataobject: {
-      straat: 'Kerkstraat',
-      gemeente: 'Utrecht',
-      geslacht: 'Man',
-      postcode: '1234 AB',
-      voornamen: 'Hendrik Jan',
-      achternaam: 'Berg',
-      akteNummer: '2024-BS-000892',
-      huisnummer: '42-A',
-      woonplaats: 'Utrecht',
-      voorletters: 'H.J.',
-      voorvoegsel: 'van der',
-      geboorteNaam: 'Vermeulen',
-      geboortedatum: '1945-03-12',
-      overlijdensdatum: '2024-02-28',
-      relatieTotOverledene: 'Ouder',
-    },
   },
 };
 
@@ -162,10 +130,11 @@ async function main() {
   // Store setup
   const databaseUrl = process.env.DATABASE_URL;
   let store: any;
+  let pool: Pool | undefined;
 
   if (databaseUrl) {
     console.log(`Using PostgreSql store with connection to ${databaseUrl.split('@')[1]}`);
-    const pool = new Pool({ connectionString: databaseUrl });
+    pool = new Pool({ connectionString: databaseUrl });
     await waitForDatabase(pool);
     store = new PostgreSql({ pool });
   } else {
@@ -185,7 +154,7 @@ async function main() {
     ),
     store,
     sources: [new OpenProduct({ baseUrl: openProductBaseUrl, apiToken: openProductToken })],
-    attestations: [new OpenProductStandplaatsvergunning(), new OpenProductOverlijdensakte()],
+    attestations: [new OpenProductStandplaatsvergunning()],
   });
 
   arc.on('issuance', async (event) => {
@@ -218,6 +187,81 @@ async function main() {
       res.json(list);
     });
   }
+
+  // Debug endpoints
+  app.get('/debug/overview-data', async (_req, res) => {
+    try {
+      // 1. Get products (from fake data or database)
+      let products: any[] = [];
+      if (openProductMode === 'fake') {
+        products = Object.values(FAKE_PRODUCTS).map((p: any) => ({
+          id: p.uuid,
+          naam: p.naam,
+          type: p.producttype.uniforme_product_naam,
+        }));
+      }
+
+      // 2. Get database data
+      let sessions: any[] = [];
+      let callbacks: any[] = [];
+      if (pool) {
+        const sResult = await pool.query('SELECT * FROM arc_sessions ORDER BY expires_at DESC NULLS LAST');
+        const cResult = await pool.query('SELECT * FROM arc_callbacks ORDER BY expires_at DESC NULLS LAST');
+        sessions = sResult.rows;
+        callbacks = cResult.rows;
+      }
+
+      // 3. Merge: ensure all products from DB are included even if not in fake list
+      const dbProductIds = new Set([
+        ...sessions.map(s => s.product_id),
+        ...callbacks.map(c => c.product_id)
+      ]);
+
+      for (const id of dbProductIds) {
+        if (!products.find(p => p.id === id)) {
+          products.push({ id, naam: 'Unknown Product', type: 'Unknown' });
+        }
+      }
+
+      const overview = products.map(p => ({
+        ...p,
+        sessions: sessions.filter(s => s.product_id === p.id),
+        callbacks: callbacks.filter(c => c.product_id === p.id),
+      }));
+
+      return res.json(overview);
+    } catch (err: any) {
+      console.error('[GET /debug/overview-data] Error:', err.message);
+      return res.status(500).json({
+        error: err.message,
+        code: err.code,
+        type: err.name
+      });
+    }
+  });
+
+  app.post('/debug/revoke', async (req, res) => {
+    try {
+      const { sessionId } = req.body;
+      if (!sessionId) {
+        return res.status(400).json({ error: 'Missing sessionId' });
+      }
+      console.log(`[POST /debug/revoke] sessionId=${sessionId}`);
+      await arc.revoke({ sessionId });
+      return res.json({ status: 'revoked', sessionId });
+    } catch (err: any) {
+      console.error('[POST /debug/revoke] Error:', err.message);
+      return res.status(500).json({
+        error: err.message,
+        code: err.code,
+        type: err.name
+      });
+    }
+  });
+
+  app.get('/debug', (_req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'demo', 'debug.html'));
+  });
 
   // POST /start — begin issuance flow
   // Body: { id: string, source?: string }
@@ -271,6 +315,7 @@ async function main() {
     console.log(`\nARC server running on http://localhost:${port}`);
     console.log('  POST /start     — begin issuance (body: { id, source? })');
     console.log('  GET  /callback  — OAuth redirect from VerID');
+    console.log('  GET  /debug     — product attestation overview');
     console.log('  GET  /health    — health check\n');
   });
 }

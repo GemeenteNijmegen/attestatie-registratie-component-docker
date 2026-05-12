@@ -11,6 +11,7 @@ An Express server wraps ARC and exposes two endpoints that mirror the Lambda han
 | `POST` | `/start` | Begin an issuance flow. Body: `{ "id": "<product-uuid>", "source": "openproduct" }`. Returns `{ "url": "<VerID OAuth URL>" }`. |
 | `GET` | `/callback` | OAuth redirect from VerID. Redirects to `ARC_REDIRECT_URL?status=true/false`. |
 | `GET` | `/health` | Health check. |
+| `GET` | `/debug` | Overview of stored sessions. |
 
 PostgreSQL is used as the session store, ensuring that issuance data persists across restarts.
 
@@ -59,8 +60,7 @@ Maps attestation types to VerID flow UUIDs. The `VerID` provider uses this to se
 
 ```json
 {
-  "standplaatsvergunning": { "flowUuid": "your-flow-uuid-here" },
-  "overlijdensakte":       { "flowUuid": "your-flow-uuid-here" }
+  "standplaatsvergunning": { "flowUuid": "your-flow-uuid-here" }
 }
 ```
 
@@ -70,12 +70,11 @@ The file is mounted into the container as a volume (see `docker-compose.yml`), s
 
 **`OPENPRODUCT_MODE=fake`** (default)
 
-Starts a built-in mock server with two test products:
+Starts a built-in mock server with one test product:
 
 | UUID | Type |
 |---|---|
 | `12126e1e-9bc1-4a30-b73e-5b5aa4ce8bc4` | `standplaatsvergunning` |
-| `341bd5ac-6a68-4ac2-812e-b9e4f4aea764` | `overlijdensakte` |
 
 Example start request:
 ```bash
