@@ -12,32 +12,29 @@ An Express server wraps ARC and exposes two endpoints that mirror the Lambda han
 | `GET` | `/callback` | OAuth redirect from VerID. Redirects to `ARC_REDIRECT_URL?status=true/false`. |
 | `GET` | `/health` | Health check. |
 
-[InMemory](https://github.com/GemeenteNijmegen/attestatie-registratie-component/blob/main/src/adapters/InMemory.ts) is used as the session store (no DynamoDB needed).
+PostgreSQL is used as the session store, ensuring that issuance data persists across restarts.
 
 ## Prerequisites
 
 - Docker + Docker Compose
-- A `flows.json` file (see below)
 - VerID credentials
 
 ## Quick start
 
-```bash
-cd projects/attestatie-registratie-component-docker
+1. **Setup configuration**
+   ```bash
+   cp .env.example .env
+   cp flows.example.json flows.json
+   ```
+   *Edit `.env` and `flows.json` with your credentials and flow UUIDs.*
 
-# 1. Configure env vars
-cp .env.example .env
-# Edit .env with your VerID credentials
+2. **Start with Docker Compose**
+   ```bash
+   docker compose up --build
+   ```
+   *This starts both the ARC server and a PostgreSQL database.*
 
-# 2. Configure VerID flow UUIDs
-cp flows.example.json flows.json
-# Edit flows.json with your actual flow UUIDs
-
-# 3. Build and start
-docker compose up --build
-```
-
-The server starts on `http://localhost:3000`.
+The server will be available at `http://localhost:3000`.
 
 ## Configuration
 

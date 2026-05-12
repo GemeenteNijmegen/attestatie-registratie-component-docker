@@ -8,7 +8,7 @@
     "dev": "tsx src/server.ts"
   },
   "dependencies": {
-    "@gemeentenijmegen/attestatie-registratie-component": "*",
+    "@gemeentenijmegen/attestatie-registratie-component": "^0.0.33",
     "express": "^4.21.2"
   },
   "devDependencies": {
